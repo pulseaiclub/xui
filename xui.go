@@ -256,12 +256,16 @@ func (vx *XUI) applyCap(e input.CapEvent) {
 }
 
 // Resize updates the screen. Must be called on the main goroutine.
+// Always clears the TTY and marks a full refresh: duplicate SIGWINCH with the
+// same cols/rows is common (e.g. Ghostty drag end), and clearing without
+// MarkRefresh leaves Diff empty → blank screen until the next forced paint.
 func (vx *XUI) Resize(cols, rows int) {
 	vx.mu.Lock()
 	defer vx.mu.Unlock()
 	vx.screen.Resize(cols, rows)
 	vx.renderer.ResetState()
 	_, _ = vx.tty.Write([]byte(render.SeqClearScreen + render.SeqHome))
+	vx.screen.MarkRefresh()
 }
 
 // ResizeToTTY queries the TTY size and resizes.
