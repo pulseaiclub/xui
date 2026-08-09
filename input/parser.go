@@ -519,9 +519,11 @@ func parseSGRMouse(params []byte, final byte) Event {
 	case 64:
 		ev.Button = MouseWheelUp
 		ev.Action = MousePress
+		ev.Wheel = 1
 	case 65:
 		ev.Button = MouseWheelDown
 		ev.Action = MousePress
+		ev.Wheel = 1
 	default:
 		if motion {
 			ev.Button = MouseNone

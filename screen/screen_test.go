@@ -39,11 +39,18 @@ func TestScreenDiffAndPresent(t *testing.T) {
 
 	s.SetCell(1, 0, cell.Cell{Char: "A", Width: 1, Style: cell.Style{Bold: true}})
 	dirty = s.Diff()
-	if len(dirty) != 1 {
-		t.Fatalf("expected 1 dirty cell, got %d", len(dirty))
+	// Row-granular damage: one changed cell dirties the whole row (width=4).
+	if len(dirty) != 4 {
+		t.Fatalf("expected full dirty row (4 cells), got %d", len(dirty))
 	}
-	if dirty[0].X != 1 || dirty[0].Y != 0 || dirty[0].Cell.Char != "A" {
-		t.Fatalf("unexpected dirty cell: %+v", dirty[0])
+	found := false
+	for _, d := range dirty {
+		if d.X == 1 && d.Y == 0 && d.Cell.Char == "A" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing dirty cell A at (1,0): %+v", dirty)
 	}
 	s.Present()
 
@@ -78,6 +85,37 @@ func TestWideCharDeleteDamagesBothColumns(t *testing.T) {
 	}
 	if !seen[0] || !seen[1] {
 		t.Fatalf("expected damage on cols 0 and 1 after wide→narrow, got %v", dirty)
+	}
+}
+
+func TestDiffRowDamageClearsUnchangedColumns(t *testing.T) {
+	// Scroll-style update: one column changes, but Diff must still re-emit the
+	// rest of the row so TTY ghosts in untouched columns get overwritten.
+	s := NewScreen(6, 1)
+	_ = s.Diff()
+	s.Present()
+
+	s.Clear()
+	s.SetCell(0, 0, cell.Cell{Char: ")", Width: 1})
+	s.SetCell(2, 0, cell.Cell{Char: "s", Width: 1})
+	s.SetCell(4, 0, cell.Cell{Char: "d", Width: 1})
+	_ = s.Diff()
+	s.Present()
+
+	s.Clear()
+	s.SetCell(0, 0, cell.Cell{Char: "中", Width: 2})
+	s.SetCell(2, 0, cell.Cell{Char: "文", Width: 2})
+	dirty := s.Diff()
+	seen := map[int]string{}
+	for _, d := range dirty {
+		seen[d.X] = d.Cell.Char
+	}
+	// Whole row rewritten — blanks at old ghost columns must be present.
+	if _, ok := seen[4]; !ok {
+		t.Fatalf("expected blank/clear emit at col 4 to wipe ghost 'd', got %v", dirty)
+	}
+	if seen[0] != "中" || seen[2] != "文" {
+		t.Fatalf("unexpected row content: %v", seen)
 	}
 }
 

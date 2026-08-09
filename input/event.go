@@ -90,6 +90,9 @@ type MouseEvent struct {
 	Button MouseButton
 	Action MouseAction
 	Mods   Modifiers
+	// Wheel is the number of wheel notches for MouseWheelUp/Down. Zero means 1.
+	// App event loops may coalesce rapid flicks into a single event with Wheel>1.
+	Wheel int
 }
 
 func (MouseEvent) isEvent() {}
