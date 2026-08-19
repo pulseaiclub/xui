@@ -159,77 +159,73 @@ func (s *Screen) SetCursorShape(shape int) {
 }
 
 // Diff returns cells that differ between front (displayed) and back (drawn).
+//
+// Damage is tracked at row granularity: if any cell on a row changes, the
+// entire row is emitted. Cell-level partial updates leave stale glyphs on the
+// TTY after CJK width churn or fast scroll (vertical "ghost columns" of
+// leftover ASCII such as ')', 's', 'd'). Rewriting the whole row clears them.
 func (s *Screen) Diff() []cell.DirtyCell {
 	out := make([]cell.DirtyCell, 0, 64)
 	if s.fullRefresh {
 		for y := 0; y < s.height; y++ {
-			for x := 0; x < s.width; {
-				c := s.back[s.idx(x, y)]
-				step := int(c.Width)
-				if step < 1 {
-					step = 1
-				}
-				// Never emit trail pads — see Cell.Trail.
-				if !c.Trail {
-					out = append(out, cell.DirtyCell{X: x, Y: y, Cell: c})
-				}
-				x += step
-			}
+			out = append(out, s.emitRow(y)...)
 		}
 		s.fullRefresh = false
 		return out
 	}
 	for y := 0; y < s.height; y++ {
-		for x := 0; x < s.width; {
-			fi := s.idx(x, y)
-			front := s.front[fi]
-			back := s.back[fi]
-			fw := int(front.Width)
-			if fw < 1 {
-				fw = 1
-			}
-			bw := int(back.Width)
-			if bw < 1 {
-				bw = 1
-			}
-			// Skip walking from a trail column; snap is handled by width steps
-			// from primaries. If we landed here, advance one.
-			if back.Trail && front.Trail && front.Equal(back) {
-				x++
-				continue
-			}
-			if front.Equal(back) && fw == bw && !back.Trail {
-				x += bw
-				continue
-			}
-			// Damage the union of old/new glyph spans. Replacing a wide glyph
-			// with a narrow one (CJK delete) must redraw both columns or the
-			// leftover half stays on the tty as a ghost block.
-			span := fw
-			if bw > span {
-				span = bw
-			}
-			for i := 0; i < span && x+i < s.width; {
-				bc := s.back[s.idx(x+i, y)]
-				bcw := int(bc.Width)
-				if bcw < 1 {
-					bcw = 1
-				}
-				if bc.Trail {
-					// Trail pad of a wide glyph already emitted (or about to be
-					// emitted via its primary). Writing it wipes CJK on the tty.
-					// When the back cell is a real narrow glyph clearing an old
-					// wide trail, Trail is false — those still emit.
-					i++
-					continue
-				}
-				out = append(out, cell.DirtyCell{X: x + i, Y: y, Cell: bc})
-				i += bcw
-			}
-			x += span
+		if s.rowDamaged(y) {
+			out = append(out, s.emitRow(y)...)
 		}
 	}
 	return out
+}
+
+// emitRow appends every non-trail cell on row y from the back buffer.
+func (s *Screen) emitRow(y int) []cell.DirtyCell {
+	out := make([]cell.DirtyCell, 0, s.width)
+	for x := 0; x < s.width; {
+		c := s.back[s.idx(x, y)]
+		step := int(c.Width)
+		if step < 1 {
+			step = 1
+		}
+		// Never emit trail pads — see Cell.Trail.
+		if !c.Trail {
+			out = append(out, cell.DirtyCell{X: x, Y: y, Cell: c})
+		}
+		x += step
+	}
+	return out
+}
+
+// rowDamaged reports whether front and back differ anywhere on row y.
+func (s *Screen) rowDamaged(y int) bool {
+	for x := 0; x < s.width; {
+		fi := s.idx(x, y)
+		front := s.front[fi]
+		back := s.back[fi]
+		fw := int(front.Width)
+		if fw < 1 {
+			fw = 1
+		}
+		bw := int(back.Width)
+		if bw < 1 {
+			bw = 1
+		}
+		// Skip walking from a trail column; snap is handled by width steps
+		// from primaries. If we landed here, advance one.
+		if back.Trail && front.Trail && front.Equal(back) {
+			x++
+			continue
+		}
+		if front.Equal(back) && fw == bw && !back.Trail {
+			x += bw
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // Present swaps front and back buffers after a successful write.
