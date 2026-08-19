@@ -11,7 +11,7 @@ type WidthMethod int
 const (
 	// WidthUnicode uses rune-based East Asian width approximation.
 	WidthUnicode WidthMethod = iota
-	// WidthWCWidth is an alias of WidthUnicode for MVP.
+	// WidthWCWidth is an alias of WidthUnicode.
 	WidthWCWidth
 )
 
@@ -25,7 +25,7 @@ func StringWidth(s string, method WidthMethod) int {
 	return w
 }
 
-// FirstGrapheme returns the first cluster (MVP: one rune) and its display width.
+// FirstGrapheme returns the first cluster (one rune) and its display width.
 func FirstGrapheme(s string, method WidthMethod) (cluster string, width int, rest string) {
 	_ = method
 	if s == "" {
