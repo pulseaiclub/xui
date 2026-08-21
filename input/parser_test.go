@@ -63,6 +63,45 @@ func TestParserSGRMouse(t *testing.T) {
 	}
 }
 
+func TestParserX10MouseWheelNotKeyRunes(t *testing.T) {
+	p := NewParser()
+	// Wheel up at (26,22): Cb=64+32='`', Cx=27+32=';', Cy=23+32='7'
+	// Without X10 handling this leaked as KeyRunes '`', ';', '7' into the composer.
+	evs := p.Feed([]byte{0x1b, '[', 'M', '`', ';', '7'})
+	if len(evs) != 1 {
+		t.Fatalf("got %d %#v", len(evs), evs)
+	}
+	m, ok := evs[0].(MouseEvent)
+	if !ok || m.Button != MouseWheelUp || m.X != 26 || m.Y != 22 || m.Wheel != 1 {
+		t.Fatalf("got %#v", evs[0])
+	}
+
+	p = NewParser()
+	// Wheel down: Cb=65+32='a'
+	evs = p.Feed([]byte{0x1b, '[', 'M', 'a', ';', '7'})
+	if len(evs) != 1 {
+		t.Fatalf("got %d %#v", len(evs), evs)
+	}
+	m, ok = evs[0].(MouseEvent)
+	if !ok || m.Button != MouseWheelDown || m.X != 26 || m.Y != 22 {
+		t.Fatalf("got %#v", evs[0])
+	}
+}
+
+func TestParserX10MouseChunked(t *testing.T) {
+	p := NewParser()
+	if evs := p.Feed([]byte{0x1b, '[', 'M'}); len(evs) != 0 {
+		t.Fatalf("partial should wait, got %#v", evs)
+	}
+	evs := p.Feed([]byte{'`', ';', '7'})
+	if len(evs) != 1 {
+		t.Fatalf("got %d %#v", len(evs), evs)
+	}
+	if _, ok := evs[0].(MouseEvent); !ok {
+		t.Fatalf("got %#v", evs[0])
+	}
+}
+
 func TestParserDA1(t *testing.T) {
 	p := NewParser()
 	evs := p.Feed([]byte("\x1b[?62;c"))

@@ -165,6 +165,16 @@ func parseESC(b []byte) (int, Event, bool) {
 	}
 	switch b[1] {
 	case '[':
+		// X10 mouse (1000/1002 without SGR 1006): ESC [ M Cb Cx Cy.
+		// CSI would treat the 'M' as a final byte with empty params, consume
+		// only ESC [ M, and leak Cb/Cx/Cy as KeyRunes into the focused field
+		// (wheel up → '`' / wheel down → 'a', then ';' and digits for coords).
+		if len(b) >= 3 && b[2] == 'M' {
+			if len(b) < 6 {
+				return 0, nil, false
+			}
+			return 6, parseX10Mouse(b[3], b[4], b[5]), true
+		}
 		return parseCSI(b)
 	case 'O':
 		if len(b) < 3 {
@@ -477,7 +487,7 @@ func keyFromCodepoint(codepoint int, mods Modifiers) KeyEvent {
 }
 
 func parseSGRMouse(params []byte, final byte) Event {
-	// ESC [ < b ; x ; y M/m
+	// ESC [ < b ; x ; y M/m  (also urxvt 1015 without '<')
 	p := params
 	if len(p) > 0 && p[0] == '<' {
 		p = p[1:]
@@ -486,15 +496,21 @@ func parseSGRMouse(params []byte, final byte) Event {
 	if len(parts) < 3 {
 		return nil
 	}
-	btn := parts[0]
-	x := parts[1] - 1
-	y := parts[2] - 1
-	ev := MouseEvent{X: x, Y: y}
-	if final == 'm' {
+	ev := mouseFromButton(parts[0], parts[1]-1, parts[2]-1)
+	// Wheel reports always use Press (same as prior SGR path).
+	if final == 'm' && ev.Button != MouseWheelUp && ev.Button != MouseWheelDown {
 		ev.Action = MouseRelease
-	} else {
-		ev.Action = MousePress
 	}
+	return ev
+}
+
+// parseX10Mouse decodes legacy mouse bytes (each is value+32; x/y are 1-based).
+func parseX10Mouse(cb, cx, cy byte) Event {
+	return mouseFromButton(int(cb)-32, int(cx)-33, int(cy)-33)
+}
+
+func mouseFromButton(btn, x, y int) MouseEvent {
+	ev := MouseEvent{X: x, Y: y, Action: MousePress}
 	motion := btn&32 != 0
 	if motion {
 		ev.Action = MouseMotion
