@@ -31,6 +31,14 @@ type XUI struct {
 	kittyPushed bool
 	mu          sync.Mutex
 
+	// graphicsNext accumulates image placements drawn since the last Render;
+	// graphicsLast remembers what was written. Both are owned by the UI
+	// goroutine (Draw + Render), the same one that touches screen.
+	graphicsNext []*placement
+	graphicsLast []*placement
+	graphicsID   uint64
+	refresh      bool
+
 	queryDone chan struct{}
 	winchCh   chan os.Signal
 	stopWinch chan struct{}
@@ -121,6 +129,7 @@ func (vx *XUI) EnterAltScreen() error {
 	vx.altScreen = true
 	vx.renderer.ResetState()
 	vx.screen.MarkRefresh()
+	vx.refresh = true // alt screen starts empty: every placement must be re-emitted
 	return nil
 }
 
@@ -272,6 +281,7 @@ func (vx *XUI) Resize(cols, rows int) {
 	vx.renderer.ResetState()
 	_, _ = vx.tty.Write([]byte(render.SeqClearScreen + render.SeqHome))
 	vx.screen.MarkRefresh()
+	vx.refresh = true // the clear wiped placements; re-emit all on the next frame
 }
 
 // ResizeToTTY queries the TTY size and resizes.
@@ -283,11 +293,17 @@ func (vx *XUI) ResizeToTTY() {
 	vx.Resize(cols, rows)
 }
 
-// Render diffs the screen and writes ANSI to the TTY.
+// Render diffs the screen, reconciles graphics placements, and writes ANSI
+// to the TTY. Placements (kitty/sixel images) live outside the cell grid, so
+// they are reconciled before the cell diff: stale placements are deleted,
+// new ones written, identical ones left alone.
 func (vx *XUI) Render() error {
 	vx.mu.Lock()
 	defer vx.mu.Unlock()
 	dirty := vx.screen.Diff()
+	vx.graphicsLast = reconcilePlacements(vx.tty, vx.graphicsLast, vx.graphicsNext, vx.refresh)
+	vx.graphicsNext = nil
+	vx.refresh = false
 	cx, cy, vis, shape := vx.screen.Cursor()
 	_, err := vx.renderer.RenderDiff(vx.tty, dirty, cx, cy, vis, shape)
 	if err != nil {
@@ -297,8 +313,12 @@ func (vx *XUI) Render() error {
 	return nil
 }
 
-// QueueRefresh forces a full redraw on the next Render.
-func (vx *XUI) QueueRefresh() { vx.screen.MarkRefresh() }
+// QueueRefresh forces a full redraw on the next Render: the whole cell grid
+// and every graphics placement are re-emitted.
+func (vx *XUI) QueueRefresh() {
+	vx.refresh = true
+	vx.screen.MarkRefresh()
+}
 
 // WriteRaw writes bytes directly to the TTY.
 func (vx *XUI) WriteRaw(p []byte) (int, error) { return vx.tty.Write(p) }
