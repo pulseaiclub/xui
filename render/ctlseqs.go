@@ -44,6 +44,13 @@ const (
 	SeqDECRQMSync    = CSI + "?2026$p"
 	SeqDECRQMUnicode = CSI + "?2027$p"
 
+	// Kitty graphics protocol query (APC). A terminal that understands it
+	// replies with ESC _ G i=1;OK ESC \, detected as CapKittyGraphics.
+	SeqKittyGraphicsQuery = "\x1b_Gi=1,a=q\x1b\\"
+	// XTSMGRAPHICS sixel query: CSI ? 2 ; 1 ; 0 S (item=2, action=request).
+	// Support is reported with status 0: CSI ? 2 ; 0 ; 0 S.
+	SeqSixelQuery = CSI + "?2;1;0S"
+
 	SeqFGReset = CSI + "39m"
 	SeqBGReset = CSI + "49m"
 

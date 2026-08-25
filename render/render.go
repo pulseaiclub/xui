@@ -28,6 +28,12 @@ type Caps struct {
 	SyncOutput    bool
 	Unicode       bool
 	InBandResize  bool
+
+	// KittyGraphics is true when the terminal speaks the kitty graphics
+	// protocol (APC ESC _ G ... ESC \) ; Sixel when it reports
+	// XTSMGRAPHICS support. Both need a known pixel size to be usable.
+	KittyGraphics bool
+	Sixel         bool
 }
 
 // NewRenderer creates a renderer.

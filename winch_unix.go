@@ -23,7 +23,8 @@ func (vx *XUI) startWinchSignals(loop *Loop) {
 				if err != nil {
 					continue
 				}
-				loop.Post(input.ResizeEvent{Cols: cols, Rows: rows})
+				xpix, ypix, _ := vx.tty.PixelSize()
+				loop.Post(input.ResizeEvent{Cols: cols, Rows: rows, XPixel: xpix, YPixel: ypix})
 			case <-vx.stopWinch:
 				signal.Stop(vx.winchCh)
 				return

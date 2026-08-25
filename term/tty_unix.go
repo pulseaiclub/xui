@@ -50,6 +50,23 @@ func (t *unixTTY) Size() (cols, rows int, err error) {
 	return int(ws.Col), int(ws.Row), nil
 }
 
+// PixelSize returns the terminal pixel size from the same ioctl. Terminals
+// that report real pixels (kitty, foot, wezterm, iTerm2) enable
+// pixel-addressed graphics; (0, 0) means unknown.
+func (t *unixTTY) PixelSize() (xpix, ypix int, err error) {
+	var ws winsize
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		t.file.Fd(),
+		ioctlGetWinsize,
+		uintptr(unsafe.Pointer(&ws)),
+	)
+	if errno != 0 {
+		return 0, 0, errno
+	}
+	return int(ws.Xpixel), int(ws.Ypixel), nil
+}
+
 func (t *unixTTY) MakeRaw() error {
 	fd := int(t.file.Fd())
 	var term syscall.Termios

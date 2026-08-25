@@ -184,7 +184,7 @@ func parseESC(b []byte) (int, Event, bool) {
 	case 'P': // DCS — skip until ST
 		return skipUntilST(b)
 	case '_': // APC
-		return skipUntilST(b)
+		return parseAPC(b)
 	case ']': // OSC
 		return parseOSC(b)
 	case 0x1b:
@@ -209,6 +209,27 @@ func skipUntilST(b []byte) (int, Event, bool) {
 			return i + 1, nil, true
 		}
 		if b[i] == 0x1b && i+1 < len(b) && b[i+1] == '\\' {
+			return i + 2, nil, true
+		}
+	}
+	return 0, nil, false
+}
+
+func parseAPC(b []byte) (int, Event, bool) {
+	// ESC _ payload ESC \  (or BEL). The kitty graphics protocol answers our
+	// query with an APC whose payload starts with 'G'; anything else is
+	// skipped like DCS.
+	for i := 2; i < len(b); i++ {
+		if b[i] == 0x07 {
+			if len(b[2:i]) > 0 && b[2] == 'G' {
+				return i + 1, CapEvent{Kind: CapKittyGraphics, Data: string(b[2:i])}, true
+			}
+			return i + 1, nil, true
+		}
+		if b[i] == 0x1b && i+1 < len(b) && b[i+1] == '\\' {
+			if len(b[2:i]) > 0 && b[2] == 'G' {
+				return i + 2, CapEvent{Kind: CapKittyGraphics, Data: string(b[2:i])}, true
+			}
 			return i + 2, nil, true
 		}
 	}
@@ -329,6 +350,15 @@ func dispatchCSI(params []byte, final byte, raw []byte) Event {
 		return CapEvent{Kind: CapKittyKB, Data: string(raw)}
 	case 'Z':
 		return KeyEvent{Code: KeyTab, Mods: ModShift, Press: true}
+	case 'S':
+		// XTSMGRAPHICS response: CSI ? 2 ; <status> ; <mode> S. The terminal
+		// answers our sixel query (CSI ? 2 ; 1 ; 0 S) with status 0 when
+		// sixel graphics are supported.
+		parts := splitParams(params)
+		if len(parts) >= 2 && parts[0] == 2 && parts[1] == 0 {
+			return CapEvent{Kind: CapSixel, Data: string(raw)}
+		}
+		return nil
 	}
 	return nil
 }

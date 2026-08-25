@@ -157,6 +157,8 @@ const (
 	CapKittyKB
 	CapDECRQM
 	CapXTVersion
+	CapKittyGraphics
+	CapSixel
 )
 
 // TickEvent is a timer tick used by the components runtime.

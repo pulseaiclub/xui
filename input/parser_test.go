@@ -246,3 +246,55 @@ func TestParserBracketedPasteChunked(t *testing.T) {
 		t.Fatalf("text=%q", pe.Text)
 	}
 }
+
+func TestParserKittyGraphicsReply(t *testing.T) {
+	p := NewParser()
+	// kitty answers the graphics query with ESC _ G i=1;OK ESC \.
+	evs := p.Feed([]byte("\x1b_Gi=1;OK\x1b\\"))
+	if len(evs) != 1 {
+		t.Fatalf("got %d %#v", len(evs), evs)
+	}
+	c, ok := evs[0].(CapEvent)
+	if !ok || c.Kind != CapKittyGraphics {
+		t.Fatalf("got %#v", evs[0])
+	}
+}
+
+func TestParserKittyGraphicsReplyBEL(t *testing.T) {
+	p := NewParser()
+	evs := p.Feed([]byte("\x1b_Gi=1;OK\x07"))
+	if len(evs) != 1 {
+		t.Fatalf("got %d %#v", len(evs), evs)
+	}
+	if c, ok := evs[0].(CapEvent); !ok || c.Kind != CapKittyGraphics {
+		t.Fatalf("got %#v", evs[0])
+	}
+}
+
+func TestParserNonGraphicsAPCSkipped(t *testing.T) {
+	p := NewParser()
+	if evs := p.Feed([]byte("\x1b_other payload\x1b\\")); len(evs) != 0 {
+		t.Fatalf("got %#v", evs)
+	}
+}
+
+func TestParserSixelReply(t *testing.T) {
+	p := NewParser()
+	// XTSMGRAPHICS response: status 0 means sixel supported.
+	evs := p.Feed([]byte("\x1b[?2;0;0S"))
+	if len(evs) != 1 {
+		t.Fatalf("got %d %#v", len(evs), evs)
+	}
+	c, ok := evs[0].(CapEvent)
+	if !ok || c.Kind != CapSixel {
+		t.Fatalf("got %#v", evs[0])
+	}
+}
+
+func TestParserSixelReplyNotSupported(t *testing.T) {
+	p := NewParser()
+	// Status 4 (unsupported) must not report sixel.
+	if evs := p.Feed([]byte("\x1b[?2;4;0S")); len(evs) != 0 {
+		t.Fatalf("got %#v", evs)
+	}
+}

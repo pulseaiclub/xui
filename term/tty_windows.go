@@ -73,6 +73,12 @@ func (t *winTTY) Size() (cols, rows int, err error) {
 	return cols, rows, nil
 }
 
+// PixelSize is unsupported on the Windows console; graphics protocols
+// (kitty/sixel) are unavailable there.
+func (t *winTTY) PixelSize() (xpix, ypix int, err error) {
+	return 0, 0, nil
+}
+
 func (t *winTTY) MakeRaw() error {
 	var mode uint32
 	hIn := t.in.Fd()

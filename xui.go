@@ -157,6 +157,8 @@ func (vx *XUI) QueryTerminal(timeout time.Duration) {
 	// arrives after Kitty/DECRQM responses and we can enable what we detected.
 	queries := render.SeqXTVersion +
 		render.SeqKittyKBQuery +
+		render.SeqKittyGraphicsQuery +
+		render.SeqSixelQuery +
 		render.SeqDECRQMSync +
 		render.SeqDECRQMUnicode +
 		render.SeqPrimaryDA
@@ -244,6 +246,10 @@ func (vx *XUI) applyCap(e input.CapEvent) {
 		if strings.Contains(e.Data, "?2027") && (strings.Contains(e.Data, ";1$") || strings.Contains(e.Data, ";2$")) {
 			vx.caps.Unicode = true
 		}
+	case input.CapKittyGraphics:
+		vx.caps.KittyGraphics = true
+	case input.CapSixel:
+		vx.caps.Sixel = true
 	case input.CapXTVersion:
 		vx.caps.RGB = true
 	}

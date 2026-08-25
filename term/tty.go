@@ -5,6 +5,9 @@ type TTY interface {
 	Read(p []byte) (int, error)
 	Write(p []byte) (int, error)
 	Size() (cols, rows int, err error)
+	// PixelSize reports the terminal pixel dimensions (0, 0 when unknown).
+	// Used to size graphics-protocol images (kitty / sixel) to cells.
+	PixelSize() (xpix, ypix int, err error)
 	MakeRaw() error
 	Restore() error
 	Fd() uintptr
