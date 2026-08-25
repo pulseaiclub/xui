@@ -136,3 +136,77 @@ func TestWindowPrint(t *testing.T) {
 		t.Fatal("child write missed")
 	}
 }
+
+func TestSixelCellsNeverEmitted(t *testing.T) {
+	s := NewScreen(4, 2)
+	s.SetCell(1, 0, cell.Cell{Sixel: true})
+	s.SetCell(2, 0, cell.Cell{Sixel: true})
+	s.SetCell(1, 1, cell.Cell{Sixel: true})
+	dirty := s.Diff() // full refresh
+	for _, d := range dirty {
+		if d.Cell.Sixel {
+			t.Fatalf("sixel cell emitted: %+v", d)
+		}
+	}
+	if len(dirty) != 8-3 {
+		t.Fatalf("expected %d emitted cells, got %d", 8-3, len(dirty))
+	}
+	s.Present()
+}
+
+func TestSixelCellsDoNotDamageRow(t *testing.T) {
+	s := NewScreen(4, 1)
+	s.Diff() // consume initial full refresh
+	s.Present()
+
+	// A sixel placement alone must not dirty the row, even though the
+	// reserved cell differs from the front buffer's default blank.
+	s.SetCell(1, 0, cell.Cell{Sixel: true})
+	if dirty := s.Diff(); len(dirty) != 0 {
+		t.Fatalf("sixel cells damaged the row: %+v", dirty)
+	}
+	s.Present()
+}
+
+func TestSixelRowStillEmitsTextAroundIt(t *testing.T) {
+	s := NewScreen(5, 1)
+	s.SetCell(1, 0, cell.Cell{Sixel: true})
+	s.Diff()
+	s.Present()
+
+	// A real change elsewhere on the row emits the row, skipping the
+	// reserved sixel cell but keeping the other cells.
+	s.SetCell(4, 0, cell.Cell{Char: "A", Width: 1})
+	s.SetCell(1, 0, cell.Cell{Sixel: true})
+	dirty := s.Diff()
+	if len(dirty) != 5-1 {
+		t.Fatalf("expected 4 cells, got %d: %+v", len(dirty), dirty)
+	}
+	for _, d := range dirty {
+		if d.Cell.Sixel {
+			t.Fatalf("sixel cell emitted: %+v", d)
+		}
+	}
+}
+
+func TestSixelRemovedAllowsRepaint(t *testing.T) {
+	s := NewScreen(4, 1)
+	s.SetCell(1, 0, cell.Cell{Sixel: true})
+	s.Diff()
+	s.Present()
+
+	// Image gone: the area becomes a normal blank cell; a later text change
+	// repaints the row including the old image column.
+	s.Clear()
+	s.SetCell(3, 0, cell.Cell{Char: "B", Width: 1})
+	dirty := s.Diff()
+	found := false
+	for _, d := range dirty {
+		if d.X == 1 && !d.Cell.Sixel {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("old image column not repainted: %+v", dirty)
+	}
+}

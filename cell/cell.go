@@ -28,6 +28,10 @@ type Cell struct {
 	// written to the tty: a space on the trail column clears the whole glyph
 	// in VTE/xterm-class terminals (looks like "missing" CJK with a blank gap).
 	Trail bool
+	// Sixel marks a cell owned by a sixel image placement. The diff engine
+	// never emits these cells and never treats them as row damage, so the
+	// bitmap pixels written by the placement survive cell redraws.
+	Sixel bool
 }
 
 // EmptyCell returns a default blank cell.

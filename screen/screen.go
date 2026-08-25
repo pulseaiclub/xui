@@ -190,8 +190,9 @@ func (s *Screen) emitRow(y int) []cell.DirtyCell {
 		if step < 1 {
 			step = 1
 		}
-		// Never emit trail pads — see Cell.Trail.
-		if !c.Trail {
+		// Never emit trail pads — see Cell.Trail. Sixel cells are owned by a
+		// graphics placement and must also never reach the tty.
+		if !c.Trail && !c.Sixel {
 			out = append(out, cell.DirtyCell{X: x, Y: y, Cell: c})
 		}
 		x += step
@@ -205,6 +206,12 @@ func (s *Screen) rowDamaged(y int) bool {
 		fi := s.idx(x, y)
 		front := s.front[fi]
 		back := s.back[fi]
+		// Cells reserved by a sixel placement are inert: never damage the
+		// row, whatever the front buffer holds there.
+		if back.Sixel {
+			x++
+			continue
+		}
 		fw := int(front.Width)
 		if fw < 1 {
 			fw = 1
