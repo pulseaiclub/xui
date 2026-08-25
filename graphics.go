@@ -64,7 +64,12 @@ func reconcilePlacements(w io.Writer, last, next []*placement, fullRefresh bool)
 	return next
 }
 
+// nextGraphicID hands out image ids. Locked: NewImage may be called from a
+// non-UI goroutine (e.g. after an async decode), and a duplicate kitty id
+// would silently replace a previously uploaded image in the terminal store.
 func (vx *XUI) nextGraphicID() uint64 {
+	vx.mu.Lock()
+	defer vx.mu.Unlock()
 	vx.graphicsID++
 	return vx.graphicsID
 }

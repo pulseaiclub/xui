@@ -7,7 +7,6 @@
 //	render   — differential ANSI renderer
 //	term     — raw TTY I/O
 //	input    — parser and events
-//
 package xui
 
 import (
@@ -125,8 +124,10 @@ const (
 	MouseMotion    = input.MouseMotion
 	MouseDrag      = input.MouseDrag
 
-	CapDA1       = input.CapDA1
-	CapKittyKB   = input.CapKittyKB
-	CapDECRQM    = input.CapDECRQM
-	CapXTVersion = input.CapXTVersion
+	CapDA1           = input.CapDA1
+	CapKittyKB       = input.CapKittyKB
+	CapDECRQM        = input.CapDECRQM
+	CapXTVersion     = input.CapXTVersion
+	CapKittyGraphics = input.CapKittyGraphics
+	CapSixel         = input.CapSixel
 )

@@ -47,6 +47,13 @@ func encodeSixel(img image.Image) []byte {
 				if a16 == 0 {
 					continue // transparent → background (bit 0)
 				}
+				// RGBA() is premultiplied; un-premultiply so soft edges
+				// (0 < alpha < 255) keep their true color.
+				if a16 != 0xFFFF {
+					r16 = r16 * 0xFFFF / a16
+					g16 = g16 * 0xFFFF / a16
+					b16 = b16 * 0xFFFF / a16
+				}
 				idx := quantize6(r16, g16, b16) + 1
 				row[w*idx+x] |= 1 << uint(p)
 			}

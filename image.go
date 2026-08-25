@@ -98,6 +98,11 @@ func (k *KittyImage) Draw(win screen.Window) {
 	if k.w == 0 || k.h == 0 {
 		return
 	}
+	// Skip images that do not fit the window: the placement CUP would clamp
+	// past the screen edge and the bitmap would land on unrelated content.
+	if w, h := win.Size(); k.w > w || k.h > h {
+		return
+	}
 	col, row := win.Origin()
 	pid := uint(col)<<16 | uint(row)
 	k.vx.addPlacement(&placement{
@@ -121,9 +126,11 @@ func (k *KittyImage) Draw(win screen.Window) {
 	})
 }
 
-// Destroy removes the image from terminal memory.
+// Destroy removes the image from terminal memory. The uploaded flag is
+// cleared so a stray Draw afterwards re-uploads instead of placing a dead id.
 func (k *KittyImage) Destroy() {
 	k.vx.writeControlString(fmt.Sprintf("\x1B_Ga=d,d=I,i=%d\x1B\\", k.id))
+	k.uploaded = false
 }
 
 func (k *KittyImage) CellSize() (w, h int) { return k.w, k.h }
@@ -170,6 +177,11 @@ func (s *Sixel) Draw(win screen.Window) {
 	if s.w == 0 || s.h == 0 || s.buf == nil {
 		return
 	}
+	// Skip images that do not fit the window: sixel output at the screen edge
+	// scrolls or clips, and the delete pass would clamp onto unrelated rows.
+	if w, h := win.Size(); s.w > w || s.h > h {
+		return
+	}
 	for y := 0; y < s.h; y++ {
 		for x := 0; x < s.w; x++ {
 			win.SetCell(x, y, cell.Cell{Sixel: true})
@@ -186,9 +198,14 @@ func (s *Sixel) Draw(win screen.Window) {
 			_, _ = w.Write(s.buf)
 		},
 		deleteFn: func(w io.Writer) {
-			// Sixel pixels are a bitmap in the terminal; blank the area.
+			// SGR reset first: ECH erases with the current background, and the
+			// frame's last cell style is still active here (placements run
+			// before the cell diff). ECH (\x1b[X) clears both the text and the
+			// sixel graphics plane — plain spaces leave the bitmap in place on
+			// xterm-class terminals.
+			_, _ = io.WriteString(w, "\x1b[m")
 			for y := 0; y < s.h; y++ {
-				_, _ = fmt.Fprintf(w, "\x1b[%d;%dH%*s", row+y+1, col+1, s.w, "")
+				_, _ = fmt.Fprintf(w, "\x1b[%d;%dH\x1b[%dX", row+y+1, col+1, s.w)
 			}
 		},
 	})
@@ -295,8 +312,9 @@ func (vx *XUI) writeControlString(s string) {
 // resizeImage scales img down to fit the w×h cell area (cellPixW×cellPixH
 // pixels per cell), preserving aspect ratio and never upscaling.
 func resizeImage(img image.Image, w, h, cellPixW, cellPixH int) image.Image {
-	wPix := img.Bounds().Max.X
-	hPix := img.Bounds().Max.Y
+	// Dx/Dy, not Bounds().Max: cropped sub-images have a non-zero Min origin.
+	wPix := img.Bounds().Dx()
+	hPix := img.Bounds().Dy()
 	columns := (wPix + cellPixW - 1) / cellPixW
 	lines := (hPix + cellPixH - 1) / cellPixH
 	if columns <= w && lines <= h {

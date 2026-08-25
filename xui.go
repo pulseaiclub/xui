@@ -336,7 +336,9 @@ func (vx *XUI) Render() error {
 }
 
 // QueueRefresh forces a full redraw on the next Render: the whole cell grid
-// and every graphics placement are re-emitted.
+// and every graphics placement are re-emitted. Placements are re-created but
+// images are not re-uploaded: the terminal's graphics store survives
+// clear-screen and alt-screen switches on kitty/wezterm/ghostty.
 func (vx *XUI) QueueRefresh() {
 	vx.refresh = true
 	vx.screen.MarkRefresh()
