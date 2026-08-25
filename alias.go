@@ -7,10 +7,12 @@
 //	render   — differential ANSI renderer
 //	term     — raw TTY I/O
 //	input    — parser and events
+//	graphics — terminal image protocols (kitty/sixel/half-block)
 package xui
 
 import (
 	"github.com/pulseaiclub/xui/cell"
+	"github.com/pulseaiclub/xui/graphics"
 	"github.com/pulseaiclub/xui/input"
 	"github.com/pulseaiclub/xui/render"
 	"github.com/pulseaiclub/xui/screen"
@@ -27,6 +29,11 @@ type (
 	DirtyCell = cell.DirtyCell
 
 	WidthMethod = cell.WidthMethod
+
+	Image          = graphics.Image
+	KittyImage     = graphics.KittyImage
+	Sixel          = graphics.Sixel
+	HalfBlockImage = graphics.HalfBlockImage
 
 	Screen = screen.Screen
 	Window = screen.Window

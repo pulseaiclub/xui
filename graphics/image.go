@@ -1,4 +1,4 @@
-package xui
+package graphics
 
 import (
 	"bytes"
@@ -18,9 +18,10 @@ import (
 // background (matches libvaxis).
 const transparentEnough = 50
 
-// Image is a static image on the screen. Create one with [XUI.NewImage],
-// size it with Resize to fit the target cell area, and call Draw from the
-// widget's render pass every frame. Call Destroy when done.
+// Image is a static image on the screen. Create one with the engine's
+// NewImage (or the package constructors), size it with Resize to fit the
+// target cell area, and call Draw from the widget's render pass every frame.
+// Call Destroy when done.
 type Image interface {
 	// Draw places the image at the window origin. Must be called every frame
 	// the image is visible; identical placements are skipped by the engine.
@@ -33,24 +34,25 @@ type Image interface {
 	CellSize() (w, h int)
 }
 
-// NewImage creates an image using the highest quality renderer the terminal
-// supports: kitty graphics, sixel, or half-block cells. The half-block
-// fallback works everywhere; the pixel-addressed protocols require a
-// reported pixel size.
-func (vx *XUI) NewImage(img image.Image) (Image, error) {
-	caps := vx.Caps()
-	w, h := vx.cellPixelSize()
-	switch {
-	case caps.KittyGraphics && w > 0 && h > 0:
-		return vx.NewKittyGraphic(img), nil
-	case caps.Sixel && w > 0 && h > 0:
-		return vx.NewSixel(img), nil
-	default:
-		return vx.NewHalfBlockImage(img), nil
-	}
+// NewKittyImage renders via the kitty graphics protocol (APC).
+func NewKittyImage(e Engine, img image.Image) *KittyImage {
+	return &KittyImage{e: e, img: img, id: e.NextGraphicID()}
 }
 
-func imageID(img Image) (uint64, bool) {
+// NewSixel renders via the sixel graphics protocol (DCS).
+func NewSixel(e Engine, img image.Image) *Sixel {
+	return &Sixel{e: e, img: img, id: e.NextGraphicID()}
+}
+
+// NewHalfBlockImage renders with half-block cells and needs no engine.
+func NewHalfBlockImage(img image.Image) *HalfBlockImage {
+	return &HalfBlockImage{img: img}
+}
+
+// ID returns the protocol id of img and whether it has one. Kitty and sixel
+// images are id'd (the terminal stores the bitmap under this id); half-block
+// images are plain cells and have no id.
+func ID(img Image) (uint64, bool) {
 	switch img := img.(type) {
 	case *KittyImage:
 		return img.id, true
@@ -61,36 +63,16 @@ func imageID(img Image) (uint64, bool) {
 	}
 }
 
-// RemoveImage drops all queued placements for img so it vanishes on the next
-// Render without another Draw call (the image stays uploaded until Destroy).
-func (vx *XUI) RemoveImage(img Image) {
-	id, ok := imageID(img)
-	if !ok {
-		return
-	}
-	next := vx.graphicsNext[:0]
-	for _, p := range vx.graphicsNext {
-		if p.id != id {
-			next = append(next, p)
-		}
-	}
-	vx.graphicsNext = next
-}
-
 // KittyImage renders via the kitty graphics protocol (APC). The PNG is
 // encoded synchronously on Resize; uploading is deferred until the first
 // Draw so an image that never becomes visible costs nothing.
 type KittyImage struct {
-	vx       *XUI
+	e        Engine
 	img      image.Image
 	id       uint64
 	w, h     int // cell size
 	uploaded bool
 	buf      []byte // APC upload chunks, built by Resize
-}
-
-func (vx *XUI) NewKittyGraphic(img image.Image) *KittyImage {
-	return &KittyImage{vx: vx, img: img, id: vx.nextGraphicID()}
 }
 
 // Draw places the image at the window origin.
@@ -105,13 +87,13 @@ func (k *KittyImage) Draw(win screen.Window) {
 	}
 	col, row := win.Origin()
 	pid := uint(col)<<16 | uint(row)
-	k.vx.addPlacement(&placement{
-		id:  k.id,
-		col: col,
-		row: row,
-		w:   k.w,
-		h:   k.h,
-		writeTo: func(w io.Writer) {
+	k.e.AddPlacement(&Placement{
+		ID:  k.id,
+		Col: col,
+		Row: row,
+		W:   k.w,
+		H:   k.h,
+		WriteTo: func(w io.Writer) {
 			if !k.uploaded {
 				_, _ = w.Write(k.buf)
 				k.uploaded = true
@@ -120,7 +102,7 @@ func (k *KittyImage) Draw(win screen.Window) {
 			// it to the origin). Same id + pid: the terminal keeps the image.
 			_, _ = fmt.Fprintf(w, "\x1B_Ga=p,i=%d,p=%d,C=1\x1B\\", k.id, pid)
 		},
-		deleteFn: func(w io.Writer) {
+		DeleteFn: func(w io.Writer) {
 			_, _ = fmt.Fprintf(w, "\x1B_Ga=d,d=i,i=%d,p=%d\x1B\\", k.id, pid)
 		},
 	})
@@ -129,7 +111,7 @@ func (k *KittyImage) Draw(win screen.Window) {
 // Destroy removes the image from terminal memory. The uploaded flag is
 // cleared so a stray Draw afterwards re-uploads instead of placing a dead id.
 func (k *KittyImage) Destroy() {
-	k.vx.writeControlString(fmt.Sprintf("\x1B_Ga=d,d=I,i=%d\x1B\\", k.id))
+	k.e.WriteControl(fmt.Sprintf("\x1B_Ga=d,d=I,i=%d\x1B\\", k.id))
 	k.uploaded = false
 }
 
@@ -137,7 +119,7 @@ func (k *KittyImage) CellSize() (w, h int) { return k.w, k.h }
 
 // Resize scales and re-encodes the image to fit the w×h cell area.
 func (k *KittyImage) Resize(w, h int) {
-	cellPixW, cellPixH := k.vx.cellPixelSize()
+	cellPixW, cellPixH := k.e.CellPixelSize()
 	if cellPixW <= 0 || cellPixH <= 0 {
 		return
 	}
@@ -159,17 +141,13 @@ func (k *KittyImage) Resize(w, h int) {
 // synchronously on Resize. Its cells are reserved on the screen so the diff
 // engine never paints text over the image.
 type Sixel struct {
-	vx       *XUI
+	e        Engine
 	img      image.Image
 	id       uint64
 	w, h     int // cell size
 	buf      []byte
 	cellPixW int
 	cellPixH int
-}
-
-func (vx *XUI) NewSixel(img image.Image) *Sixel {
-	return &Sixel{vx: vx, img: img, id: vx.nextGraphicID()}
 }
 
 // Draw places the image at the window origin and reserves its cells.
@@ -188,16 +166,16 @@ func (s *Sixel) Draw(win screen.Window) {
 		}
 	}
 	col, row := win.Origin()
-	s.vx.addPlacement(&placement{
-		id:  s.id,
-		col: col,
-		row: row,
-		w:   s.w,
-		h:   s.h,
-		writeTo: func(w io.Writer) {
+	s.e.AddPlacement(&Placement{
+		ID:  s.id,
+		Col: col,
+		Row: row,
+		W:   s.w,
+		H:   s.h,
+		WriteTo: func(w io.Writer) {
 			_, _ = w.Write(s.buf)
 		},
-		deleteFn: func(w io.Writer) {
+		DeleteFn: func(w io.Writer) {
 			// SGR reset first: ECH erases with the current background, and the
 			// frame's last cell style is still active here (placements run
 			// before the cell diff). ECH (\x1b[X) clears both the text and the
@@ -218,7 +196,7 @@ func (s *Sixel) CellSize() (w, h int) { return s.w, s.h }
 
 // Resize scales and re-encodes the image to fit the w×h cell area.
 func (s *Sixel) Resize(w, h int) {
-	cellPixW, cellPixH := s.vx.cellPixelSize()
+	cellPixW, cellPixH := s.e.CellPixelSize()
 	if cellPixW <= 0 || cellPixH <= 0 {
 		return
 	}
@@ -236,10 +214,6 @@ type HalfBlockImage struct {
 	img           image.Image
 	cells         []cell.Cell
 	width, height int
-}
-
-func (vx *XUI) NewHalfBlockImage(img image.Image) *HalfBlockImage {
-	return &HalfBlockImage{img: img}
 }
 
 // Draw writes the image cells at the window origin.
@@ -300,13 +274,6 @@ func kittyUploadChunks(id uint64, b64 string) []byte {
 	}
 	fmt.Fprintf(&b, "\x1B_Gf=100,i=%d,m=0;%s\x1B\\", id, b64)
 	return []byte(b.String())
-}
-
-// writeControlString writes a control sequence straight to the TTY.
-func (vx *XUI) writeControlString(s string) {
-	vx.mu.Lock()
-	defer vx.mu.Unlock()
-	_, _ = vx.tty.Write([]byte(s))
 }
 
 // resizeImage scales img down to fit the w×h cell area (cellPixW×cellPixH

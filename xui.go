@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pulseaiclub/xui/graphics"
 	"github.com/pulseaiclub/xui/input"
 	"github.com/pulseaiclub/xui/render"
 	"github.com/pulseaiclub/xui/screen"
@@ -34,8 +35,8 @@ type XUI struct {
 	// graphicsNext accumulates image placements drawn since the last Render;
 	// graphicsLast remembers what was written. Both are owned by the UI
 	// goroutine (Draw + Render), the same one that touches screen.
-	graphicsNext []*placement
-	graphicsLast []*placement
+	graphicsNext []*graphics.Placement
+	graphicsLast []*graphics.Placement
 	graphicsID   uint64
 	refresh      bool
 
@@ -323,7 +324,7 @@ func (vx *XUI) Render() error {
 	vx.mu.Lock()
 	defer vx.mu.Unlock()
 	dirty := vx.screen.Diff()
-	vx.graphicsLast = reconcilePlacements(vx.tty, vx.graphicsLast, vx.graphicsNext, vx.refresh)
+	vx.graphicsLast = graphics.ReconcilePlacements(vx.tty, vx.graphicsLast, vx.graphicsNext, vx.refresh)
 	vx.graphicsNext = nil
 	vx.refresh = false
 	cx, cy, vis, shape := vx.screen.Cursor()
