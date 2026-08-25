@@ -15,7 +15,7 @@ import (
 )
 
 // Alpha value that counts as transparent enough to fall back to the terminal
-// background (matches libvaxis).
+// background.
 const transparentEnough = 50
 
 // Image is a static image on the screen. Create one with the engine's

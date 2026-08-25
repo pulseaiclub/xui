@@ -318,7 +318,7 @@ func dispatchCSI(params []byte, final byte, raw []byte) Event {
 	case '~':
 		return parseTildeKey(params)
 	case 'u':
-		// Kitty keyboard query reply: CSI ? <flags> u (libvaxis / kitty protocol).
+		// Kitty keyboard query reply: CSI ? <flags> u (kitty protocol).
 		if len(raw) > 2 && raw[2] == '?' {
 			return CapEvent{Kind: CapKittyKB, Data: string(raw)}
 		}

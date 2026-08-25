@@ -163,8 +163,8 @@ func (vx *XUI) EnableBracketedPaste() error {
 
 // QueryTerminal sends capability probes and waits up to timeout for DA1.
 func (vx *XUI) QueryTerminal(timeout time.Duration) {
-	// Match libvaxis: probe features first, Primary DA last so its reply
-	// arrives after Kitty/DECRQM responses and we can enable what we detected.
+	// Probe features first, Primary DA last so its reply arrives after
+	// Kitty/DECRQM responses and we can enable what we detected.
 	queries := render.SeqXTVersion +
 		render.SeqKittyKBQuery +
 		render.SeqKittyGraphicsQuery +
