@@ -293,6 +293,28 @@ func (vx *XUI) ResizeToTTY() {
 	vx.Resize(cols, rows)
 }
 
+// cellPixelSize returns the pixel size of one cell from the TTY ioctl.
+// Pixel-addressed graphics (kitty/sixel) need it to size images; (0, 0)
+// means the terminal reports no pixel size and block cells are used.
+func (vx *XUI) cellPixelSize() (int, int) {
+	xpix, ypix, err := vx.tty.PixelSize()
+	if err != nil {
+		return 0, 0
+	}
+	cols, rows := vx.screen.Size()
+	if cols == 0 || rows == 0 || xpix == 0 || ypix == 0 {
+		return 0, 0
+	}
+	return xpix / cols, ypix / rows
+}
+
+// CellPixelSize returns the pixel size of one cell; (0, 0) when unknown.
+func (vx *XUI) CellPixelSize() (int, int) {
+	vx.mu.Lock()
+	defer vx.mu.Unlock()
+	return vx.cellPixelSize()
+}
+
 // Render diffs the screen, reconciles graphics placements, and writes ANSI
 // to the TTY. Placements (kitty/sixel images) live outside the cell grid, so
 // they are reconciled before the cell diff: stale placements are deleted,
