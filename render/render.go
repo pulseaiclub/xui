@@ -23,7 +23,10 @@ type Renderer struct {
 
 // Caps holds probed terminal capabilities.
 type Caps struct {
-	RGB           bool
+	// ColorLevel is the effective color depth (env baseline ± in-band upgrade).
+	// Replaces the former RGB bool; RGB ≡ ColorLevel >= cell.ColorTrue.
+	ColorLevel cell.ColorLevel
+
 	KittyKeyboard bool
 	SyncOutput    bool
 	Unicode       bool
@@ -159,6 +162,11 @@ func (r *Renderer) moveTo(buf *bytes.Buffer, x, y int) {
 }
 
 func (r *Renderer) writeStyleDiff(buf *bytes.Buffer, s cell.Style) {
+	// Downgrade before compare so currentStyle tracks what was actually
+	// written; distinct RGBs that collapse to one index emit SGR once.
+	s.Fg = s.Fg.Downgrade(r.caps.ColorLevel)
+	s.Bg = s.Bg.Downgrade(r.caps.ColorLevel)
+
 	if r.styleValid && r.currentStyle.Equal(s) {
 		return
 	}
@@ -170,11 +178,11 @@ func (r *Renderer) writeStyleDiff(buf *bytes.Buffer, s cell.Style) {
 	cur := &r.currentStyle
 
 	if !cur.Fg.Equal(s.Fg) {
-		writeColor(buf, s.Fg, true, r.caps.RGB)
+		writeColor(buf, s.Fg, true)
 		cur.Fg = s.Fg
 	}
 	if !cur.Bg.Equal(s.Bg) {
-		writeColor(buf, s.Bg, false, r.caps.RGB)
+		writeColor(buf, s.Bg, false)
 		cur.Bg = s.Bg
 	}
 	if cur.Bold != s.Bold {
@@ -233,7 +241,9 @@ func (r *Renderer) writeStyleDiff(buf *bytes.Buffer, s cell.Style) {
 	}
 }
 
-func writeColor(buf *bytes.Buffer, c cell.Color, fg bool, allowRGB bool) {
+// writeColor encodes an already-downgraded color as SGR. RGB only appears
+// when Caps.ColorLevel is ColorTrue.
+func writeColor(buf *bytes.Buffer, c cell.Color, fg bool) {
 	switch c.Kind {
 	case cell.ColorDefault:
 		if fg {
@@ -242,27 +252,32 @@ func writeColor(buf *bytes.Buffer, c cell.Color, fg bool, allowRGB bool) {
 			buf.WriteString(seqBGReset)
 		}
 	case cell.ColorIndex:
-		if fg {
-			fmt.Fprintf(buf, csi+"38;5;%dm", c.Index)
-		} else {
-			fmt.Fprintf(buf, csi+"48;5;%dm", c.Index)
+		switch {
+		case c.Index < 8:
+			base := 30
+			if !fg {
+				base = 40
+			}
+			fmt.Fprintf(buf, csi+"%dm", base+int(c.Index))
+		case c.Index < 16:
+			base := 90
+			if !fg {
+				base = 100
+			}
+			fmt.Fprintf(buf, csi+"%dm", base+int(c.Index)-8)
+		default:
+			p := "38"
+			if !fg {
+				p = "48"
+			}
+			fmt.Fprintf(buf, csi+"%s;5;%dm", p, c.Index)
 		}
 	case cell.ColorRGB:
-		if allowRGB {
-			if fg {
-				fmt.Fprintf(buf, csi+"38;2;%d;%d;%dm", c.R, c.G, c.B)
-			} else {
-				fmt.Fprintf(buf, csi+"48;2;%d;%d;%dm", c.R, c.G, c.B)
-			}
-		} else {
-			// Fallback: nearest 256-color is out of scope; use indexed approx via brightness.
-			idx := uint8((int(c.R)*30 + int(c.G)*59 + int(c.B)*11) / 100 * 23 / 255)
-			if fg {
-				fmt.Fprintf(buf, csi+"38;5;%dm", 232+idx)
-			} else {
-				fmt.Fprintf(buf, csi+"48;5;%dm", 232+idx)
-			}
+		p := "38"
+		if !fg {
+			p = "48"
 		}
+		fmt.Fprintf(buf, csi+"%s;2;%d;%d;%dm", p, c.R, c.G, c.B)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pulseaiclub/xui/cell"
 	"github.com/pulseaiclub/xui/graphics"
 	"github.com/pulseaiclub/xui/input"
 	"github.com/pulseaiclub/xui/render"
@@ -31,6 +32,11 @@ type XUI struct {
 	altScreen   bool
 	kittyPushed bool
 	mu          sync.Mutex
+
+	// colorForced is true when the user set a hard color ceiling
+	// (FORCE_COLOR numeric / NO_COLOR / TERM=dumb / SetColorLevel).
+	// In-band probes must not raise ColorLevel past that intent.
+	colorForced bool
 
 	// graphicsNext accumulates image placements drawn since the last Render;
 	// graphicsLast remembers what was written. Both are owned by the UI
@@ -64,7 +70,7 @@ func New(opts Options) (*XUI, error) {
 		queryDone: make(chan struct{}),
 		stopWinch: make(chan struct{}),
 	}
-	vx.caps.RGB = true
+	vx.caps.ColorLevel, vx.colorForced = detectColorLevel()
 	vx.renderer.UpdateCaps(vx.caps)
 	return vx, nil
 }
@@ -229,7 +235,8 @@ func (vx *XUI) applyCap(e input.CapEvent) {
 	vx.mu.Lock()
 	switch e.Kind {
 	case input.CapDA1:
-		vx.caps.RGB = true
+		// DA1 only proves the terminal answers queries, not color depth
+		// (Linux console replies ESC[?6c but is 16-color). Sentinel only.
 		select {
 		case <-vx.queryDone:
 		default:
@@ -261,7 +268,11 @@ func (vx *XUI) applyCap(e input.CapEvent) {
 	case input.CapSixel:
 		vx.caps.Sixel = true
 	case input.CapXTVersion:
-		vx.caps.RGB = true
+		// XTVERSION responders (xterm/kitty/wezterm/ghostty/…) are
+		// truecolor-era terminals; upgrade unless the user hard-capped.
+		if !vx.colorForced && vx.caps.ColorLevel < cell.ColorTrue {
+			vx.caps.ColorLevel = cell.ColorTrue
+		}
 	}
 	vx.renderer.UpdateCaps(vx.caps)
 	vx.mu.Unlock()
@@ -269,6 +280,23 @@ func (vx *XUI) applyCap(e input.CapEvent) {
 	if pushKitty {
 		_, _ = vx.tty.Write([]byte(render.SeqKittyKBPush))
 	}
+}
+
+// SetColorLevel overrides the color capability (tests or unusual terminals).
+// The level becomes a hard ceiling: subsequent probes will not raise it.
+func (vx *XUI) SetColorLevel(level cell.ColorLevel) {
+	vx.mu.Lock()
+	defer vx.mu.Unlock()
+	vx.caps.ColorLevel = level
+	vx.colorForced = true
+	vx.renderer.UpdateCaps(vx.caps)
+}
+
+// ColorLevel returns the effective color capability.
+func (vx *XUI) ColorLevel() cell.ColorLevel {
+	vx.mu.Lock()
+	defer vx.mu.Unlock()
+	return vx.caps.ColorLevel
 }
 
 // Resize updates the screen. Must be called on the main goroutine.

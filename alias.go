@@ -21,12 +21,13 @@ import (
 
 // Core type aliases so applications can import a single package for the engine API.
 type (
-	Cell      = cell.Cell
-	Style     = cell.Style
-	Color     = cell.Color
-	ColorKind = cell.ColorKind
-	Hyperlink = cell.Hyperlink
-	DirtyCell = cell.DirtyCell
+	Cell       = cell.Cell
+	Style      = cell.Style
+	Color      = cell.Color
+	ColorKind  = cell.ColorKind
+	ColorLevel = cell.ColorLevel
+	Hyperlink  = cell.Hyperlink
+	DirtyCell  = cell.DirtyCell
 
 	WidthMethod = cell.WidthMethod
 
@@ -82,6 +83,11 @@ const (
 	ColorDefault = cell.ColorDefault
 	ColorIndex   = cell.ColorIndex
 	ColorRGB     = cell.ColorRGB
+
+	ColorNone  = cell.ColorNone
+	ColorBasic = cell.ColorBasic
+	Color256   = cell.Color256
+	ColorTrue  = cell.ColorTrue
 
 	WidthUnicode = cell.WidthUnicode
 	WidthWCWidth = cell.WidthWCWidth
