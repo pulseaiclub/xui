@@ -87,8 +87,11 @@ func (t *winTTY) MakeRaw() error {
 		return fmt.Errorf("GetConsoleMode: %v", e)
 	}
 	t.inMode = mode
-	mode &^= enableEchoInput | enableLineInput | enableProcessedInput
-	mode |= enableVirtualTerminalInput | enableWindowInput
+	mode &^= enableEchoInput | enableLineInput | enableProcessedInput | enableQuickEditMode
+	// ENABLE_EXTENDED_FLAGS must be set for the QuickEdit change to stick;
+	// leaving QuickEdit on lets a stray mouse click put the console into
+	// selection mode, which blocks all I/O and freezes the app.
+	mode |= enableVirtualTerminalInput | enableWindowInput | enableExtendedFlags
 	r, _, e = procSetConsoleMode.Call(hIn, uintptr(mode))
 	if r == 0 {
 		return fmt.Errorf("SetConsoleMode in: %v", e)
@@ -100,7 +103,13 @@ func (t *winTTY) MakeRaw() error {
 		return fmt.Errorf("GetConsoleMode out: %v", e)
 	}
 	t.outMode = mode
-	mode |= enableVirtualTerminalProc | enableProcessedOutput | enableWrapAtEolOutput
+	// xui paints with absolute cursor positioning and never relies on
+	// auto-wrap. Leave ENABLE_WRAP_AT_EOL_OUTPUT off: on the legacy Windows
+	// console (conhost) — unlike xterm-likes, which defer the wrap — writing
+	// the bottom-right cell wraps immediately and scrolls the whole buffer
+	// up one line, tearing every full-height frame.
+	mode |= enableVirtualTerminalProc | enableProcessedOutput
+	mode &^= enableWrapAtEolOutput
 	r, _, e = procSetConsoleMode.Call(hOut, uintptr(mode))
 	if r == 0 {
 		return fmt.Errorf("SetConsoleMode out: %v", e)

@@ -11,6 +11,10 @@ const (
 	SeqShowCursor  = CSI + "?25h"
 	SeqClearScreen = CSI + "2J"
 	SeqHome        = CSI + "H"
+	// SeqEraseDown is ED 0 (erase from cursor to end of display). Prefer
+	// SeqHome + SeqEraseDown over CSI 2J: Windows Terminal and VS Code push
+	// the viewport into scrollback on 2J, leaving stale frames behind.
+	SeqEraseDown = CSI + "J"
 
 	SeqSyncSet   = CSI + "?2026h"
 	SeqSyncReset = CSI + "?2026l"
@@ -70,6 +74,7 @@ const (
 	seqShowCursor  = SeqShowCursor
 	seqClearScreen = SeqClearScreen
 	seqHome        = SeqHome
+	seqEraseDown   = SeqEraseDown
 	seqSyncSet     = SeqSyncSet
 	seqSyncReset   = SeqSyncReset
 	seqAltEnter    = SeqAltEnter

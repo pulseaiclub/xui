@@ -308,7 +308,9 @@ func (vx *XUI) Resize(cols, rows int) {
 	defer vx.mu.Unlock()
 	vx.screen.Resize(cols, rows)
 	vx.renderer.ResetState()
-	_, _ = vx.tty.Write([]byte(render.SeqClearScreen + render.SeqHome))
+	// Home + ED 0 instead of CSI 2J: 2J pushes the viewport into scrollback
+	// on Windows Terminal / VS Code, leaving a stale snapshot behind.
+	_, _ = vx.tty.Write([]byte(render.SeqHome + render.SeqEraseDown))
 	vx.screen.MarkRefresh()
 	vx.refresh = true // the clear wiped placements; re-emit all on the next frame
 }
@@ -376,5 +378,6 @@ func (vx *XUI) QueueRefresh() {
 // WriteRaw writes bytes directly to the TTY.
 func (vx *XUI) WriteRaw(p []byte) (int, error) { return vx.tty.Write(p) }
 
-// NotifyWinsize starts delivering ResizeEvents to loop on SIGWINCH (unix).
+// NotifyWinsize starts delivering ResizeEvents to loop on size changes
+// (SIGWINCH on unix; console-size polling on Windows).
 func (vx *XUI) NotifyWinsize(loop *Loop) { vx.startWinchSignals(loop) }

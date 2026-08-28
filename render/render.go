@@ -293,9 +293,12 @@ func writeHyperlink(buf *bytes.Buffer, h cell.Hyperlink) {
 	buf.WriteString(st)
 }
 
-// EnterAltScreenSeq EnterAltScreen returns the alt-screen enter sequence plus clear.
+// EnterAltScreenSeq returns the alt-screen enter sequence plus clear.
+// The clear is Home + ED 0 rather than CSI 2J: Windows Terminal and VS Code
+// push the viewport into scrollback on 2J (and on conhost, which ignores
+// 1049, this clears the primary buffer).
 func EnterAltScreenSeq() string {
-	return seqAltEnter + seqSGRReset + seqClearScreen + seqHome + seqHideCursor
+	return seqAltEnter + seqSGRReset + seqHome + seqEraseDown + seqHideCursor
 }
 
 // ExitAltScreenSeq returns the alt-screen exit sequence.
