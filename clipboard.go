@@ -11,7 +11,7 @@ import (
 
 // CopyToClipboard writes text to the system clipboard.
 // Prefers OSC 52 when writing to the TTY, then falls back to platform tools
-// (pbcopy / wl-copy / xclip / clip).
+// (pbcopy / wl-copy / xclip; Windows uses the native UTF-16 clipboard API).
 func (vx *XUI) CopyToClipboard(text string) error {
 	if text == "" {
 		return fmt.Errorf("xui: empty clipboard text")
@@ -43,10 +43,7 @@ func copyPlatformClipboard(text string) error {
 	case "darwin":
 		return pipeToCmd(text, "pbcopy")
 	case "windows":
-		if err := pipeToCmd(text, "clip"); err == nil {
-			return nil
-		}
-		return pipeToCmd(text, "powershell", "-NoProfile", "-Command", "$Input | Set-Clipboard")
+		return writeWindowsClipboard(text)
 	default:
 		if lookPath("wl-copy") {
 			if err := pipeToCmd(text, "wl-copy"); err == nil {
