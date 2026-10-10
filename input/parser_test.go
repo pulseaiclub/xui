@@ -298,3 +298,112 @@ func TestParserSixelReplyNotSupported(t *testing.T) {
 		t.Fatalf("got %#v", evs)
 	}
 }
+
+func TestParserPendingEscIsLoneEsc(t *testing.T) {
+	p := NewParser()
+	if evs := p.Feed([]byte{0x1b}); len(evs) != 0 {
+		t.Fatalf("a lone ESC must wait for the next byte, got %#v", evs)
+	}
+	if !p.PendingEsc() {
+		t.Fatal("expected a pending ESC")
+	}
+}
+
+func TestParserFlushEsc(t *testing.T) {
+	p := NewParser()
+	p.Feed([]byte{0x1b})
+	evs := p.FlushEsc()
+	if len(evs) != 1 {
+		t.Fatalf("got %d events", len(evs))
+	}
+	if k, ok := evs[0].(KeyEvent); !ok || k.Code != KeyEscape || !k.Press {
+		t.Fatalf("got %#v", evs[0])
+	}
+	if p.PendingEsc() {
+		t.Fatal("the byte must be consumed")
+	}
+	if evs = p.FlushEsc(); len(evs) != 0 {
+		t.Fatalf("flushing again must do nothing, got %#v", evs)
+	}
+}
+
+// A sequence split across two reads is one key, not an Esc followed by the
+// rest: only a lone ESC may be flushed.
+func TestParserFlushEscLeavesPartialSequencesAlone(t *testing.T) {
+	cases := []struct {
+		name      string
+		prefix    string
+		completes string
+	}{
+		{"CSI", "\x1b[", "A"},
+		{"SS3", "\x1bO", "A"},
+		{"OSC", "\x1b]", "\x07"},
+		{"SGR mouse", "\x1b[<0;1;1", "m"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := NewParser()
+			if evs := p.Feed([]byte(c.prefix)); len(evs) != 0 {
+				t.Fatalf("%q produced %#v", c.prefix, evs)
+			}
+			if p.PendingEsc() {
+				t.Fatalf("%q is a sequence in progress, not a lone ESC", c.prefix)
+			}
+			if evs := p.FlushEsc(); len(evs) != 0 {
+				t.Fatalf("%q must not flush, got %#v", c.prefix, evs)
+			}
+			// A flush attempt must not have eaten the bytes: the sequence still
+			// parses as itself once the rest arrives.
+			for _, ev := range p.Feed([]byte(c.completes)) {
+				if k, ok := ev.(KeyEvent); ok && k.Code == KeyEscape {
+					t.Fatalf("a split sequence leaked an Escape: %#v", ev)
+				}
+			}
+		})
+	}
+}
+
+func TestParserPendingEscNotInsidePaste(t *testing.T) {
+	p := NewParser()
+	p.Feed([]byte("\x1b[200~"))
+	p.Feed([]byte{0x1b, 0x1b})
+	if p.PendingEsc() {
+		t.Fatal("paste bytes are text, not a pending escape")
+	}
+	if evs := p.FlushEsc(); len(evs) != 0 {
+		t.Fatalf("got %#v", evs)
+	}
+}
+
+// Esc followed at once by a key is Alt+key and must not be flushed as Esc.
+func TestParserPendingEscFalseForAltKey(t *testing.T) {
+	p := NewParser()
+	evs := p.Feed([]byte("\x1bj"))
+	if len(evs) != 1 {
+		t.Fatalf("got %d events", len(evs))
+	}
+	k, ok := evs[0].(KeyEvent)
+	if !ok || k.Rune != 'j' || !k.Mods.Has(ModAlt) {
+		t.Fatalf("got %#v", evs[0])
+	}
+	if p.PendingEsc() {
+		t.Fatal("Alt+j is complete, nothing is pending")
+	}
+}
+
+// Two ESC in one read consume the first as Esc and leave the second pending,
+// which is what a double-tap looks like: two Escapes a delay apart.
+func TestParserDoubleEscLeavesOnePending(t *testing.T) {
+	p := NewParser()
+	evs := p.Feed([]byte{0x1b, 0x1b})
+	if len(evs) != 1 || evs[0].(KeyEvent).Code != KeyEscape {
+		t.Fatalf("got %#v", evs)
+	}
+	if !p.PendingEsc() {
+		t.Fatal("the second ESC must still be pending")
+	}
+	evs = p.FlushEsc()
+	if len(evs) != 1 || evs[0].(KeyEvent).Code != KeyEscape {
+		t.Fatalf("got %#v", evs)
+	}
+}
