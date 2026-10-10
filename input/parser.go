@@ -66,6 +66,32 @@ func (p *Parser) Feed(data []byte) []Event {
 	return events
 }
 
+// PendingEsc reports whether a lone ESC is buffered, waiting to find out
+// whether it is the Escape key or the first byte of an escape sequence.
+//
+// The byte is ambiguous by nature: terminals send Esc, arrows, function keys,
+// Alt+key and mouse reports as byte sequences that all start with ESC, so
+// nothing in the stream says whether more bytes follow. The parser holds the
+// byte until one does; a caller with a clock resolves the wait with FlushEsc
+// once the input goes quiet.
+func (p *Parser) PendingEsc() bool {
+	return !p.inPaste && len(p.buf) == 1 && p.buf[0] == 0x1b
+}
+
+// FlushEsc reads a lone pending ESC as the Escape key.
+//
+// It is deliberately narrow: any other pending state means the parser is
+// assembling a real sequence (ESC [ A arriving in two reads, say), and those
+// bytes must still parse as the one key they are. Callers that time out a
+// sequence in progress should leave it alone rather than guess.
+func (p *Parser) FlushEsc() []Event {
+	if !p.PendingEsc() {
+		return nil
+	}
+	p.buf = p.buf[:0]
+	return []Event{KeyEvent{Code: KeyEscape, Press: true}}
+}
+
 func (p *Parser) parseOne(b []byte) (consumed int, ev Event, ok bool) {
 	if len(b) == 0 {
 		return 0, nil, false

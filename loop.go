@@ -5,9 +5,19 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pulseaiclub/xui/input"
 )
+
+// DefaultEscDelay is how long a lone ESC waits for the byte that would make it
+// an escape sequence before it is delivered as the Escape key.
+//
+// Esc, arrows, function keys, Alt+key and mouse reports are all byte sequences
+// beginning with ESC, so one byte on its own is ambiguous. The delay is what
+// separates a bare Esc from the rest; a sequence arriving in time cancels it,
+// so the only cost is that Esc lands this much later than the keypress.
+const DefaultEscDelay = 50 * time.Millisecond
 
 // Loop reads TTY input on a background goroutine and delivers Events.
 type Loop struct {
@@ -17,15 +27,33 @@ type Loop struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	running atomic.Bool
+
+	// escDelay is Options.EscDelay, or DefaultEscDelay when that is zero.
+	// Negative disables the timeout, leaving a bare Esc buffered until the next
+	// key arrives and merges with it as Alt+key.
+	escDelay time.Duration
+
+	// parserMu keeps the reader and the Esc timer off each other's bytes: both
+	// Feed (reader) and FlushEsc (timer) mutate the same buffer.
+	parserMu sync.Mutex
+	escTimer *time.Timer
+	// escGen invalidates a timer that has already been superseded, so a stale
+	// one cannot flush the ESC of a later keypress early.
+	escGen uint64
 }
 
 // NewLoop creates an event loop bound to vx.
 func NewLoop(vx *XUI) *Loop {
-	return &Loop{
-		vx:     vx,
-		parser: input.NewParser(),
-		events: make(chan input.Event, 512),
+	loop := &Loop{
+		vx:       vx,
+		parser:   input.NewParser(),
+		events:   make(chan input.Event, 512),
+		escDelay: DefaultEscDelay,
 	}
+	if vx != nil && vx.opts.EscDelay != 0 {
+		loop.escDelay = vx.opts.EscDelay
+	}
+	return loop
 }
 
 // Start begins the reader goroutine.
@@ -47,6 +75,7 @@ func (l *Loop) Stop() {
 	if !l.running.Swap(false) {
 		return
 	}
+	l.stopEscTimer()
 	if l.cancel != nil {
 		l.cancel()
 	}
@@ -91,9 +120,7 @@ func (l *Loop) readLoop(ctx context.Context) {
 		}
 		n, err := l.vx.tty.Read(buf)
 		if n > 0 {
-			for _, ev := range l.parser.Feed(buf[:n]) {
-				l.handle(ev)
-			}
+			l.feed(buf[:n])
 		}
 		if err != nil {
 			if err == io.EOF {
@@ -106,6 +133,65 @@ func (l *Loop) readLoop(ctx context.Context) {
 				continue
 			}
 		}
+	}
+}
+
+// feed parses bytes from the terminal and re-arms the Esc timeout. A read that
+// leaves a lone ESC buffered is the only case that needs a timer; every other
+// state resolves the byte itself.
+func (l *Loop) feed(data []byte) {
+	l.parserMu.Lock()
+	events := l.parser.Feed(data)
+	pending := l.parser.PendingEsc()
+	l.parserMu.Unlock()
+	for _, ev := range events {
+		l.handle(ev)
+	}
+	l.armEscTimer(pending)
+}
+
+// armEscTimer schedules the timeout that resolves a lone ESC into the Escape
+// key. It runs on its own goroutine rather than through a read deadline: a tty
+// file does not support SetReadDeadline ("file type does not support
+// deadline"), so the timer cannot borrow the reader's clock. Flushing is still
+// safe from here because PendingEsc re-checks the parser at fire time.
+func (l *Loop) armEscTimer(pending bool) {
+	l.parserMu.Lock()
+	defer l.parserMu.Unlock()
+	if l.escTimer != nil {
+		l.escTimer.Stop()
+		l.escTimer = nil
+	}
+	if !pending || l.escDelay <= 0 {
+		return
+	}
+	l.escGen++
+	gen := l.escGen
+	l.escTimer = time.AfterFunc(l.escDelay, func() { l.flushEsc(gen) })
+}
+
+// flushEsc delivers a pending lone ESC as the Escape key, unless a later
+// keypress already replaced it (gen mismatch) or there is nothing to resolve.
+func (l *Loop) flushEsc(gen uint64) {
+	l.parserMu.Lock()
+	if gen != l.escGen {
+		l.parserMu.Unlock()
+		return
+	}
+	l.escTimer = nil
+	events := l.parser.FlushEsc()
+	l.parserMu.Unlock()
+	for _, ev := range events {
+		l.handle(ev)
+	}
+}
+
+func (l *Loop) stopEscTimer() {
+	l.parserMu.Lock()
+	defer l.parserMu.Unlock()
+	if l.escTimer != nil {
+		l.escTimer.Stop()
+		l.escTimer = nil
 	}
 }
 

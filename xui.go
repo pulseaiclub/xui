@@ -19,6 +19,12 @@ import (
 type Options struct {
 	Mouse          bool
 	BracketedPaste bool
+	// EscDelay is how long a lone ESC waits for the rest of an escape sequence
+	// before it is delivered as the Escape key. Zero uses DefaultEscDelay;
+	// negative disables the timeout, leaving a bare Esc buffered until the next
+	// key arrives and merges with it as Alt+key. Raise it on a slow link, where
+	// the bytes of one sequence can arrive far apart.
+	EscDelay time.Duration
 }
 
 // XUI is the core TUI engine: screen, capabilities, and render.
