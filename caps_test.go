@@ -99,10 +99,63 @@ func TestDetectColorLevel(t *testing.T) {
 			wantLevel:  cell.ColorTrue,
 			wantForced: false,
 		},
+		{
+			name:       "Windows Terminal without TERM or COLORTERM",
+			env:        map[string]string{"WT_SESSION": "session", "TERM": ""},
+			unset:      []string{"FORCE_COLOR", "NO_COLOR", "COLORTERM"},
+			wantLevel:  cell.ColorTrue,
+			wantForced: false,
+		},
+		{
+			name:       "Windows Terminal outranks a 256color TERM",
+			env:        map[string]string{"WT_SESSION": "session", "TERM": "xterm-256color"},
+			unset:      []string{"FORCE_COLOR", "NO_COLOR", "COLORTERM"},
+			wantLevel:  cell.ColorTrue,
+			wantForced: false,
+		},
+		{
+			name:       "blank WT_SESSION is ignored",
+			env:        map[string]string{"WT_SESSION": " ", "TERM": "xterm-256color"},
+			unset:      []string{"FORCE_COLOR", "NO_COLOR", "COLORTERM"},
+			wantLevel:  cell.Color256,
+			wantForced: false,
+		},
+		{
+			name:       "NO_COLOR outranks Windows Terminal",
+			env:        map[string]string{"WT_SESSION": "session", "NO_COLOR": "1", "TERM": ""},
+			unset:      []string{"FORCE_COLOR", "COLORTERM"},
+			wantLevel:  cell.ColorNone,
+			wantForced: true,
+		},
+		{
+			name:       "TERM dumb outranks Windows Terminal",
+			env:        map[string]string{"WT_SESSION": "session", "TERM": "dumb"},
+			unset:      []string{"FORCE_COLOR", "NO_COLOR", "COLORTERM"},
+			wantLevel:  cell.ColorNone,
+			wantForced: true,
+		},
+		{
+			name:       "numeric FORCE_COLOR outranks Windows Terminal",
+			env:        map[string]string{"WT_SESSION": "session", "FORCE_COLOR": "2", "TERM": ""},
+			unset:      []string{"NO_COLOR", "COLORTERM"},
+			wantLevel:  cell.Color256,
+			wantForced: true,
+		},
+		{
+			name:       "FORCE_COLOR true keeps the Windows Terminal hint",
+			env:        map[string]string{"WT_SESSION": "session", "FORCE_COLOR": "true", "TERM": ""},
+			unset:      []string{"NO_COLOR", "COLORTERM"},
+			wantLevel:  cell.ColorTrue,
+			wantForced: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// A Windows Terminal host leaks WT_SESSION into the test process
+			// and it now feeds envColorHint; every case starts without it and
+			// opts back in through env.
+			unsetenv(t, "WT_SESSION")
 			for _, k := range tt.unset {
 				unsetenv(t, k)
 			}

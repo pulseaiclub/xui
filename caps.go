@@ -12,7 +12,7 @@ import (
 // The bool is true when the user forced a hard ceiling that in-band
 // probes must not exceed (numeric FORCE_COLOR, NO_COLOR, TERM=dumb).
 //
-// Precedence: FORCE_COLOR > NO_COLOR > TERM=dumb > COLORTERM > TERM.
+// Precedence: FORCE_COLOR > NO_COLOR > TERM=dumb > WT_SESSION > COLORTERM > TERM.
 func detectColorLevel() (cell.ColorLevel, bool) {
 	if fc, ok := os.LookupEnv("FORCE_COLOR"); ok {
 		switch strings.ToLower(strings.TrimSpace(fc)) {
@@ -46,8 +46,16 @@ func detectColorLevel() (cell.ColorLevel, bool) {
 	return envColorHint(), false
 }
 
-// envColorHint reads COLORTERM / TERM for a non-forced baseline.
+// envColorHint reads WT_SESSION / COLORTERM / TERM for a non-forced baseline.
 func envColorHint() cell.ColorLevel {
+	// Windows Terminal hands neither TERM nor COLORTERM to a PowerShell
+	// shell, but sets WT_SESSION for every process it spawns. It is checked
+	// before TERM: a 256color TERM there is a shell default, not a limit of
+	// the panel. FORCE_COLOR, NO_COLOR and TERM=dumb still win — those return
+	// before this hint is consulted.
+	if strings.TrimSpace(os.Getenv("WT_SESSION")) != "" {
+		return cell.ColorTrue
+	}
 	switch os.Getenv("COLORTERM") {
 	case "truecolor", "24bit":
 		return cell.ColorTrue
