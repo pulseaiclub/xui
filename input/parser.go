@@ -366,9 +366,11 @@ func dispatchCSI(params []byte, final byte, raw []byte) Event {
 		return parseInBandResize(params)
 	case 'n':
 		return nil // DSR ignore
-	case 'p':
-		// DECRQSS / DECRQM response
-		return CapEvent{Kind: CapDECRQM, Data: string(raw)}
+	case 'y':
+		// DECRPM reply to DECRQM: CSI [ ? ] mode ; status $ y.
+		if bytes.HasSuffix(params, []byte{'$'}) {
+			return CapEvent{Kind: CapDECRQM, Data: string(raw)}
+		}
 	case 'q':
 		if bytes.Contains(raw, []byte{'>'}) {
 			return CapEvent{Kind: CapXTVersion, Data: string(raw)}

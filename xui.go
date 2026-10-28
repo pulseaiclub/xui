@@ -263,10 +263,10 @@ func (vx *XUI) applyCap(e input.CapEvent) {
 			}
 		}
 	case input.CapDECRQM:
-		if strings.Contains(e.Data, "?2026") && (strings.Contains(e.Data, ";1$") || strings.Contains(e.Data, ";2$")) {
+		switch e.Data {
+		case "\x1b[?2026;1$y", "\x1b[?2026;2$y":
 			vx.caps.SyncOutput = true
-		}
-		if strings.Contains(e.Data, "?2027") && (strings.Contains(e.Data, ";1$") || strings.Contains(e.Data, ";2$")) {
+		case "\x1b[?2027;1$y", "\x1b[?2027;2$y":
 			vx.caps.Unicode = true
 		}
 	case input.CapKittyGraphics:
