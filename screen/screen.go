@@ -2,6 +2,11 @@ package screen
 
 import "github.com/pulseaiclub/xui/cell"
 
+// maxGlyphSpan bounds how far left SetCell looks for the primary of a wide
+// glyph whose continuation column is being overwritten. Generous: ZWJ emoji
+// clusters span several cells, plain CJK spans two.
+const maxGlyphSpan = 8
+
 // Screen holds a double-buffered cell grid (front/back swap).
 type Screen struct {
 	width, height int
@@ -105,6 +110,26 @@ func (s *Screen) SetCell(x, y int, c cell.Cell) {
 	// A caller may pass Trail by mistake on a primary; only continuations set it.
 	if c.Width > 1 {
 		c.Trail = false
+	}
+	// Writing into the continuation column of an existing wide glyph must
+	// truncate that glyph. Otherwise its primary still claims the old width,
+	// Diff width-steps over this cell (it is never emitted), and the tty keeps
+	// showing the wide glyph on top of the new cell — an overlay border next
+	// to CJK text visibly loses its left edge.
+	for d := 1; d <= x && d < maxGlyphSpan; d++ {
+		p := s.back[s.idx(x-d, y)]
+		if p.Trail {
+			continue // skip continuation columns, keep looking left
+		}
+		if int(p.Width) > d {
+			blank := cell.EmptyCell()
+			blank.Default = false
+			blank.Char = " "
+			blank.Width = 1
+			blank.Style = cell.Style{Fg: p.Style.Fg, Bg: p.Style.Bg}
+			s.back[s.idx(x-d, y)] = blank
+		}
+		break
 	}
 	s.back[s.idx(x, y)] = c
 	if c.Width > 1 {
